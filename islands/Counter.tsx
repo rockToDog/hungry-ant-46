@@ -34,7 +34,7 @@ export default function Counter(props: CounterProps) {
           }
         }}
       >
-        +1
+        +2
       </Button>
     </div>
   );
