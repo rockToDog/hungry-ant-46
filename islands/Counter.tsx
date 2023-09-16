@@ -81,7 +81,7 @@ export default function Counter() {
   };
 
   const startWebsocket = (user) => {
-    const socket = new WebSocket("ws://rocktodog.deno.dev");
+    const socket = new WebSocket("wss://rocktodog.deno.dev");
     socketRef.current = socket;
     socket.addEventListener("open", function (event) {
       peerRef.current.id &&
