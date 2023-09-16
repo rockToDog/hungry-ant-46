@@ -61,20 +61,26 @@ function fileToBlob(file) {
 
 export default function Counter() {
   const [peers, setPeers] = useState([]);
-  const [user, setUser] = useState(localStorage.getItem("user"));
+  const [user, setUser] = useState();
   const peerRef = useRef();
   const socketRef = useRef();
 
   useEffect(() => {
+    const user = localStorage.getItem("user");
     if (!!user) {
-      peerRef.current = new Peer();
-      handleIncomingConnection();
-      startWebsocket();
-      window.addEventListener("beforeunload", disconnectWebsocket);
+      setUser(user);
+      init(user);
     }
-  }, [user]);
+  }, []);
 
-  const startWebsocket = () => {
+  const init = (user) => {
+    peerRef.current = new Peer();
+    handleIncomingConnection();
+    startWebsocket(user);
+    window.addEventListener("beforeunload", disconnectWebsocket);
+  };
+
+  const startWebsocket = (user) => {
     const socket = new WebSocket("ws://localhost:8000");
     socketRef.current = socket;
     socket.addEventListener("open", function (event) {
@@ -156,6 +162,7 @@ export default function Counter() {
   const handleUserChange = (e) => {
     localStorage.setItem("user", e.target.value);
     setUser(e.target.value);
+    init(e.target.value);
   };
 
   return (
