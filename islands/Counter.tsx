@@ -7,63 +7,38 @@ interface CounterProps {
   start: number;
 }
 
-const download = (data, filename, mime, bom) => {
-  var blobData = typeof bom !== "undefined" ? [bom, data] : [data];
-  var blob = new Blob(blobData, { type: mime || "application/octet-stream" });
-  if (typeof window.navigator.msSaveBlob !== "undefined") {
-    // IE workaround for "HTML7007: One or more blob URLs were
-    // revoked by closing the blob for which they were created.
-    // These URLs will no longer resolve as the data backing
-    // the URL has been freed."
-    window.navigator.msSaveBlob(blob, filename);
-  } else {
-    var blobURL =
-      window.URL && window.URL.createObjectURL
-        ? window.URL.createObjectURL(blob)
-        : window.webkitURL.createObjectURL(blob);
-    var tempLink = document.createElement("a");
-    tempLink.style.display = "none";
-    tempLink.href = blobURL;
-    tempLink.setAttribute("download", filename);
-    if (typeof tempLink.download === "undefined") {
-      tempLink.setAttribute("target", "_blank");
-    }
-
-    document.body.appendChild(tempLink);
-    tempLink.click();
-
-    setTimeout(function () {
-      document.body.removeChild(tempLink);
-      window.URL.revokeObjectURL(blobURL);
-    }, 200);
-  }
+export const download = (data: {
+  file: ArrayBuffer[];
+  fileName?: string;
+}) => {
+  const link = window.URL.createObjectURL(
+    new Blob(data.file, { type: "arrayBuffer" })
+  );
+  const a = document.createElement("a");
+  a.href = link;
+  a.download = data.fileName || "download";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(link);
 };
 
-function fileToBlob(file) {
-  // 创建 FileReader 对象
-  let reader = new FileReader();
+const readAsArrayBuffer = (blob: Blob): Promise<ArrayBuffer> => {
   return new Promise((resolve) => {
-    // FileReader 添加 load 事件
-    reader.addEventListener("load", (e) => {
-      let blob;
-      if (typeof e.target.result === "object") {
-        blob = new Blob([e.target.result]);
-      } else {
-        blob = e.target.result;
-      }
-      console.log(Object.prototype.toString.call(blob));
-      resolve(blob);
-    });
-    // FileReader 以 ArrayBuffer 格式 读取 File 对象中数据
-    reader.readAsArrayBuffer(file);
+    const reader = new FileReader();
+    reader.onload = (e: ProgressEvent) => {
+      resolve(reader.result as ArrayBuffer);
+    };
+    reader.readAsArrayBuffer(blob);
   });
-}
+};
 
 export default function Counter() {
   const [peers, setPeers] = useState([]);
   const [user, setUser] = useState();
   const peerRef = useRef();
   const socketRef = useRef();
+  const fileInfoRef = useRef({});
 
   useEffect(() => {
     const user = localStorage.getItem("user");
@@ -75,13 +50,17 @@ export default function Counter() {
 
   const init = (user) => {
     peerRef.current = new Peer();
-    handleIncomingConnection();
-    startWebsocket(user);
-    window.addEventListener("beforeunload", disconnectWebsocket);
+    console.log(peerRef.current);
+    peerRef.current.on("open", () => {
+      handleIncomingConnection();
+      startWebsocket(user);
+      window.addEventListener("beforeunload", disconnectWebsocket);
+    });
   };
 
   const startWebsocket = (user) => {
-    const socket = new WebSocket("wss://rocktodog.deno.dev");
+    // const socket = new WebSocket("ws://rocktodog.deno.dev");
+    const socket = new WebSocket("ws://192.168.10.109:8000");
     socketRef.current = socket;
     socket.addEventListener("open", function (event) {
       peerRef.current.id &&
@@ -114,8 +93,22 @@ export default function Counter() {
         console.log("open: " + conn.id);
         conn.on("data", function (receivedData) {
           console.log("Receiving data");
-          let data = receivedData;
-          download(data.file || "", data.fileName || "fileName", data.fileType);
+          if (receivedData?.dataType === "FILE") {
+            fileInfoRef.current = receivedData;
+          } else {
+            fileInfoRef.current.receivedSize += receivedData.byteLength;
+            fileInfoRef.current.file.push(receivedData);
+
+            if (fileInfoRef.current.fileSize === fileInfoRef.current.receivedSize) {
+              download(fileInfoRef.current
+                // fileInfoRef.current.file || "",
+                // fileInfoRef.current.fileName || "fileName",
+                // fileInfoRef.current.fileType
+              );
+              fileInfoRef.current = {};
+              return;
+            }
+          }
         });
       });
     });
@@ -144,19 +137,45 @@ export default function Counter() {
     });
   };
 
+  const sendFile = async (conn, file) => {
+    conn.send({
+      file: [],
+      receivedSize: 0,
+      dataType: "FILE",
+      fileSize: file.size,
+      fileName: file.name,
+      fileType: file.type,
+    });
+
+    let offset = 0;
+    let buffer: ArrayBuffer;
+    const chunkSize = conn.peerConnection.sctp?.maxMessageSize || 10 * 1024 * 1024;
+    while (offset < file.size) {
+      const slice = file.slice(offset, offset + chunkSize);
+      buffer =
+        typeof slice.arrayBuffer === "function"
+          ? await slice.arrayBuffer()
+          : await readAsArrayBuffer(slice);
+      if (conn.dataChannel.bufferedAmount > chunkSize) {
+        await new Promise((resolve) => {
+          conn.dataChannel.onbufferedamountlow = resolve;
+        });
+      }
+
+      conn.send(buffer);
+      console.log(parseInt((offset / file.size) * 100 + ""));
+      offset += buffer.byteLength;
+    }
+  };
+
   const handleChange = async (id, e) => {
     const fileList = e.target.files;
     const { conn } = await connectPeer(id);
     let file = fileList[0] as unknown as File;
-    let blob = new Blob([file], { type: file.type });
-    blob = await blob.arrayBuffer();
-
-    conn.send({
-      dataType: "FILE",
-      file: blob,
-      fileName: file.name,
-      fileType: file.type,
-    });
+    // let blob = new Blob([file], { type: file.type });
+    // blob = await blob.arrayBuffer();
+    sendFile(conn, file);
+    // conn.send();
   };
 
   const handleUserChange = (e) => {
