@@ -1,5 +1,6 @@
 import { type StateUpdater, useState, useEffect, useRef } from "preact/hooks";
 import { Button } from "../components/Button.tsx";
+import Progress from "./Progress.tsx";
 // import { Peer } from "peerjs";
 
 const Peer = window.Peer as unknown as any;
@@ -7,10 +8,7 @@ interface CounterProps {
   start: number;
 }
 
-export const download = (data: {
-  file: ArrayBuffer[];
-  fileName?: string;
-}) => {
+export const download = (data: { file: ArrayBuffer[]; fileName?: string }) => {
   const link = window.URL.createObjectURL(
     new Blob(data.file, { type: "arrayBuffer" })
   );
@@ -36,6 +34,7 @@ const readAsArrayBuffer = (blob: Blob): Promise<ArrayBuffer> => {
 export default function Counter() {
   const [peers, setPeers] = useState([]);
   const [user, setUser] = useState();
+  const [progress, setProgress] = useState();
   const peerRef = useRef();
   const socketRef = useRef();
   const fileInfoRef = useRef({});
@@ -59,8 +58,8 @@ export default function Counter() {
   };
 
   const startWebsocket = (user) => {
-    // const socket = new WebSocket("ws://rocktodog.deno.dev");
-    const socket = new WebSocket("ws://192.168.10.109:8000");
+    const socket = new WebSocket("wss://rocktodog.deno.dev");
+    // const socket = new WebSocket("ws://192.168.10.109:8000");
     socketRef.current = socket;
     socket.addEventListener("open", function (event) {
       peerRef.current.id &&
@@ -98,14 +97,19 @@ export default function Counter() {
           } else {
             fileInfoRef.current.receivedSize += receivedData.byteLength;
             fileInfoRef.current.file.push(receivedData);
-
-            if (fileInfoRef.current.fileSize === fileInfoRef.current.receivedSize) {
-              download(fileInfoRef.current
-                // fileInfoRef.current.file || "",
-                // fileInfoRef.current.fileName || "fileName",
-                // fileInfoRef.current.fileType
-              );
+            setProgress(
+              parseInt(
+                (fileInfoRef.current.receivedSize /
+                  fileInfoRef.current.fileSize) *
+                  100
+              )
+            );
+            if (
+              fileInfoRef.current.fileSize === fileInfoRef.current.receivedSize
+            ) {
+              download(fileInfoRef.current);
               fileInfoRef.current = {};
+              setProgress(0);
               return;
             }
           }
@@ -138,18 +142,19 @@ export default function Counter() {
   };
 
   const sendFile = async (conn, file) => {
-    conn.send({
+    fileInfoRef.current = {
       file: [],
       receivedSize: 0,
       dataType: "FILE",
       fileSize: file.size,
       fileName: file.name,
       fileType: file.type,
-    });
-
+    };
+    conn.send(fileInfoRef.current);
     let offset = 0;
     let buffer: ArrayBuffer;
-    const chunkSize = conn.peerConnection.sctp?.maxMessageSize || 10 * 1024 * 1024;
+    const chunkSize =
+      conn.peerConnection.sctp?.maxMessageSize || 10 * 1024 * 1024;
     while (offset < file.size) {
       const slice = file.slice(offset, offset + chunkSize);
       buffer =
@@ -164,8 +169,11 @@ export default function Counter() {
 
       conn.send(buffer);
       console.log(parseInt((offset / file.size) * 100 + ""));
+      setProgress(parseInt((offset / file.size) * 100));
       offset += buffer.byteLength;
     }
+    setProgress(0);
+    fileInfoRef.current = {};
   };
 
   const handleChange = async (id, e) => {
@@ -186,6 +194,9 @@ export default function Counter() {
 
   return (
     <div>
+      {!!progress && (
+        <Progress progress={progress} file={fileInfoRef.current} />
+      )}
       {!user ? (
         <input
           className={"bg-blue-200 active:border-black"}
@@ -197,21 +208,42 @@ export default function Counter() {
 
       <div className={"w-full flex gap-2 flex-col"}>
         {peers?.map((i) => (
-          <div className={"w-full"}>
-            <label
-              className="w-full transition-all cursor-pointer p-2 inline-block bg-blue-100 hover:bg-blue-200"
-              for={i.peerId}
-            >
-              {i.user}
-            </label>
-            <input
-              className="hidden"
-              onChange={handleChange.bind(null, i.peerId)}
-              id={i.peerId}
-              type="file"
-              class="bg-blue-200"
-            />
+          <div>
+            <div class="block p-4 m-auto bg-white rounded-lg shadow">
+              <div>
+                <span class="text-xs font-light inline-block py-1 px-2 uppercase rounded-full text-white bg-black">
+                  <label className="" for={i.peerId}>
+                    {i.user}
+                  </label>
+                  <input
+                    className="hidden"
+                    onChange={handleChange.bind(null, i.peerId)}
+                    id={i.peerId}
+                    type="file"
+                    class="bg-blue-200"
+                  />
+                </span>
+              </div>
+            </div>
           </div>
+
+          // <div
+          //   className={
+          //     "flex justify-between w-full transition-all cursor-pointer p-2 inline-block bg-blue-100 hover:bg-blue-200"
+          //   }
+          // >
+          //   <label className="" for={i.peerId}>
+          //     {i.user}
+          //   </label>
+          //   <input
+          //     className="hidden"
+          //     onChange={handleChange.bind(null, i.peerId)}
+          //     id={i.peerId}
+          //     type="file"
+          //     class="bg-blue-200"
+          //   />
+          //   <div>123123</div>
+          // </div>
         ))}
       </div>
     </div>
