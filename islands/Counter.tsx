@@ -1,12 +1,6 @@
 import { type StateUpdater, useState, useEffect, useRef } from "preact/hooks";
-import { Button } from "../components/Button.tsx";
 import Progress from "./Progress.tsx";
-// import { Peer } from "peerjs";
-
-const Peer = window.Peer as unknown as any;
-interface CounterProps {
-  start: number;
-}
+const Peer = window.Peer;
 
 export const download = (data: { file: ArrayBuffer[]; fileName?: string }) => {
   const link = window.URL.createObjectURL(
@@ -58,8 +52,8 @@ export default function Counter() {
   };
 
   const startWebsocket = (user) => {
-    const socket = new WebSocket("wss://rocktodog.deno.dev");
-    // const socket = new WebSocket("ws://192.168.10.109:8000");
+    // const socket = new WebSocket("wss://rocktodog.deno.dev");
+    const socket = new WebSocket("ws://192.168.10.109:8000");
     socketRef.current = socket;
     socket.addEventListener("open", function (event) {
       peerRef.current.id &&
@@ -95,8 +89,8 @@ export default function Counter() {
           if (receivedData?.dataType === "FILE") {
             fileInfoRef.current = receivedData;
           } else {
-            fileInfoRef.current.receivedSize += receivedData.byteLength;
-            fileInfoRef.current.file.push(receivedData);
+            fileInfoRef.current.receivedSize += receivedData.file.byteLength;
+            fileInfoRef.current.file.push(receivedData.file);
             setProgress(
               parseInt(
                 (fileInfoRef.current.receivedSize /
@@ -153,8 +147,8 @@ export default function Counter() {
     conn.send(fileInfoRef.current);
     let offset = 0;
     let buffer: ArrayBuffer;
-    const chunkSize =
-      conn.peerConnection.sctp?.maxMessageSize || 10 * 1024 * 1024;
+
+    const chunkSize = 65535;
     while (offset < file.size) {
       const slice = file.slice(offset, offset + chunkSize);
       buffer =
@@ -167,7 +161,7 @@ export default function Counter() {
         });
       }
 
-      conn.send(buffer);
+      conn.send({ file: buffer });
       console.log(parseInt((offset / file.size) * 100 + ""));
       setProgress(parseInt((offset / file.size) * 100));
       offset += buffer.byteLength;
@@ -226,24 +220,6 @@ export default function Counter() {
               </div>
             </div>
           </div>
-
-          // <div
-          //   className={
-          //     "flex justify-between w-full transition-all cursor-pointer p-2 inline-block bg-blue-100 hover:bg-blue-200"
-          //   }
-          // >
-          //   <label className="" for={i.peerId}>
-          //     {i.user}
-          //   </label>
-          //   <input
-          //     className="hidden"
-          //     onChange={handleChange.bind(null, i.peerId)}
-          //     id={i.peerId}
-          //     type="file"
-          //     class="bg-blue-200"
-          //   />
-          //   <div>123123</div>
-          // </div>
         ))}
       </div>
     </div>

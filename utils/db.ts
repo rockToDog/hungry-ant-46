@@ -1,12 +1,14 @@
 const kv = await Deno.openKv();
 
-const PREFIX = ["count"];
-
-export async function getCount() {
-  const res = await kv.get<number>(PREFIX);
-  return res.value;
+export async function getPeer() {
+  const entries = kv.list({ prefix: ["peers"] });
+  const res = [];
+  for await (const entry of entries) {
+    res.push(entry.value);
+  }
+  return res;
 }
 
-export async function setCount(newCount: number) {
-  await kv.set(PREFIX, newCount);
+export async function setPeer(user: string, peer: string) {
+  await kv.set(["peers", user], peer);
 }
